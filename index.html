@@ -152,6 +152,18 @@
 
   .room-body { min-height: 60px; padding: 8px; }
 
+  .add-room-card {
+    background: transparent; border: 2px dashed var(--border);
+    border-radius: var(--radius); cursor: pointer; transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; min-height: 100px;
+  }
+  .add-room-card:hover { border-color: var(--accent); background: var(--accent-dim); }
+  .add-room-card:hover .add-room-icon { color: var(--accent); }
+  .add-room-card:hover .add-room-text { color: var(--accent); }
+  .add-room-icon { font-size: 1.4rem; color: var(--text-muted); transition: color 0.2s; line-height: 1; }
+  .add-room-text { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); transition: color 0.2s; }
+
   .student-chip {
     padding: 8px 12px; margin: 4px 0; border-radius: var(--radius-sm);
     font-size: 0.82rem; font-weight: 500; cursor: grab;
@@ -587,6 +599,13 @@ function renderWorkspace() {
     grid.appendChild(card);
   });
 
+  // Add room card
+  const addCard = document.createElement('div');
+  addCard.className = 'add-room-card';
+  addCard.innerHTML = '<span class="add-room-icon">+</span><span class="add-room-text">Add Room</span>';
+  addCard.addEventListener('click', addRoom);
+  grid.appendChild(addCard);
+
   initSortable();
   updateStats();
   checkConflicts();
@@ -696,6 +715,14 @@ function updateRoomCount(val) {
   while (rooms.length > n) rooms.pop();
   while (rooms.length < n) rooms.push({id:rooms.length, name:`Room ${rooms.length+1}`, students:[]});
   numRooms = n;
+  renderWorkspace();
+}
+
+function addRoom() {
+  const newId = rooms.length ? Math.max(...rooms.map(r => r.id)) + 1 : 0;
+  rooms.push({id: newId, name: `Room ${rooms.length + 1}`, students: []});
+  numRooms = rooms.length;
+  document.getElementById('roomCountLive').value = numRooms;
   renderWorkspace();
 }
 
