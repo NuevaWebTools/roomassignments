@@ -3,30 +3,34 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Room Assigner</title>
+<title>Nueva Room Assigner</title>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0f1117;
-    --surface: #1a1d27;
-    --surface-raised: #232733;
-    --border: #2e3345;
-    --border-hover: #454d6a;
-    --text: #e4e6ef;
-    --text-muted: #8b90a5;
-    --accent: #6c8cff;
-    --accent-dim: rgba(108,140,255,0.12);
-    --female: #e07baa;
-    --female-dim: rgba(224,123,170,0.12);
-    --male: #5ba4e0;
-    --male-dim: rgba(91,164,224,0.12);
-    --nonbinary: #8dd4a8;
-    --nonbinary-dim: rgba(141,212,168,0.12);
-    --danger: #e06b6b;
-    --danger-dim: rgba(224,107,107,0.12);
-    --success: #6bcf8e;
-    --warning: #e0c36b;
+    --bg: #FFFFFF;
+    --surface: #F0F4F6;
+    --surface-raised: #E2EAF0;
+    --border: #B0C4D2;
+    --border-hover: #7A9AB5;
+    --text: #1A171B;
+    --text-muted: #556A7A;
+    --accent: #0028BC;
+    --accent-hover: #001F5E;
+    --accent-dim: rgba(0,40,188,0.08);
+    --female: #7A3B8F;
+    --female-dim: rgba(122,59,143,0.08);
+    --male: #0028BC;
+    --male-dim: rgba(0,40,188,0.08);
+    --nonbinary: #4A8B3C;
+    --nonbinary-dim: rgba(74,139,60,0.08);
+    --danger: #C0392B;
+    --danger-dim: rgba(192,57,43,0.08);
+    --success: #91D64E;
+    --success-text: #3A7A10;
+    --warning: #D4880A;
+    --navy: #001F5E;
+    --green: #91D64E;
     --radius: 10px;
     --radius-sm: 6px;
   }
@@ -69,9 +73,9 @@
     transition: all 0.15s;
     white-space: nowrap;
   }
-  .btn:hover { border-color: var(--border-hover); background: #2a2f3d; }
-  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .btn-primary:hover { background: #5a7af0; }
+  .btn:hover { border-color: var(--border-hover); background: #D6E2EC; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
+  .btn-primary:hover { background: var(--accent-hover); }
   .btn-danger { border-color: var(--danger); color: var(--danger); }
   .btn-danger:hover { background: var(--danger-dim); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -112,7 +116,7 @@
     color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.9rem; text-align: center;
   }
 
-  .file-loaded { margin-top: 16px; font-size: 0.82rem; color: var(--success); display: none; }
+  .file-loaded { margin-top: 16px; font-size: 0.82rem; color: var(--success-text); display: none; }
 
   .workspace { display: none; padding: 24px 28px; }
 
@@ -169,7 +173,7 @@
     font-size: 0.82rem; font-weight: 500; cursor: grab;
     display: flex; align-items: center; gap: 8px;
     transition: all 0.15s; border: 1px solid transparent;
-    background: rgba(228,230,239,0.07); color: var(--text);
+    background: rgba(0,40,188,0.04); color: var(--text);
   }
   .student-chip:active { cursor: grabbing; }
 
@@ -178,10 +182,10 @@
     padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
     line-height: 1.4;
   }
-  .gender-label.gl-female { background: rgba(224,123,170,0.15); color: var(--female); }
-  .gender-label.gl-male { background: rgba(91,164,224,0.15); color: var(--male); }
-  .gender-label.gl-nonbinary { background: rgba(141,212,168,0.15); color: var(--nonbinary); }
-  .gender-label.gl-unknown { background: rgba(139,144,165,0.15); color: var(--text-muted); }
+  .gender-label.gl-female { background: var(--female-dim); color: var(--female); }
+  .gender-label.gl-male { background: var(--male-dim); color: var(--male); }
+  .gender-label.gl-nonbinary { background: var(--nonbinary-dim); color: var(--nonbinary); }
+  .gender-label.gl-unknown { background: rgba(85,106,122,0.10); color: var(--text-muted); }
 
   .chip-name { flex: 1; }
   .chip-warning { font-size: 0.7rem; color: var(--danger); cursor: help; }
@@ -196,7 +200,7 @@
   }
 
   .sortable-ghost { opacity: 0.3; }
-  .sortable-chosen { box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+  .sortable-chosen { box-shadow: 0 4px 20px rgba(0,31,94,0.15); }
 
   .unassigned-panel {
     background: var(--surface); border: 1px solid var(--border);
@@ -221,15 +225,15 @@
     border: 1px solid var(--border); border-radius: var(--radius-sm);
     padding: 10px 14px; font-size: 0.78rem; line-height: 1.5;
     color: var(--text-muted); max-width: 360px; z-index: 1000;
-    pointer-events: none; box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    pointer-events: none; box-shadow: 0 8px 30px rgba(0,31,94,0.15);
   }
   .tooltip strong { color: var(--text); }
-  .tooltip .pref-yes { color: var(--success); }
+  .tooltip .pref-yes { color: var(--success-text); }
   .tooltip .pref-no { color: var(--danger); }
 
   .conflict-log {
     margin-top: 16px; padding: 14px 18px; background: var(--danger-dim);
-    border: 1px solid rgba(224,107,107,0.25); border-radius: var(--radius);
+    border: 1px solid rgba(192,57,43,0.25); border-radius: var(--radius);
     font-size: 0.8rem; color: var(--danger); display: none; line-height: 1.6;
   }
   .conflict-log h4 { font-family: 'DM Sans', sans-serif; font-weight: 600; margin-bottom: 6px; font-size: 0.82rem; }
@@ -269,24 +273,24 @@
     font-size: 0.8rem; font-weight: 500;
   }
   .review-gender .gender-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-  .review-gender.female { color: var(--female); }
-  .review-gender.female .gender-dot { background: var(--female); }
-  .review-gender.male { color: var(--male); }
-  .review-gender.male .gender-dot { background: var(--male); }
-  .review-gender.nonbinary { color: var(--nonbinary); }
-  .review-gender.nonbinary .gender-dot { background: var(--nonbinary); }
+  .review-gender.female { color: #7A3B8F; }
+  .review-gender.female .gender-dot { background: #7A3B8F; }
+  .review-gender.male { color: #0028BC; }
+  .review-gender.male .gender-dot { background: #0028BC; }
+  .review-gender.nonbinary { color: #4A8B3C; }
+  .review-gender.nonbinary .gender-dot { background: #4A8B3C; }
 
   .pref-tag {
     display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px;
     font-size: 0.75rem; font-weight: 500; white-space: nowrap;
   }
-  .pref-tag.matched { background: rgba(107,207,142,0.12); color: var(--success); }
-  .pref-tag.unmatched { background: rgba(224,195,107,0.12); color: var(--warning); }
+  .pref-tag.matched { background: rgba(74,139,60,0.10); color: var(--success-text); }
+  .pref-tag.unmatched { background: rgba(212,136,10,0.10); color: var(--warning); }
   .pref-tag.not-comf { background: var(--danger-dim); color: var(--danger); }
   .pref-tag.not-comf.matched { background: var(--danger-dim); color: var(--danger); }
-  .pref-tag.not-comf.unmatched { background: rgba(224,195,107,0.12); color: var(--warning); }
+  .pref-tag.not-comf.unmatched { background: rgba(212,136,10,0.10); color: var(--warning); }
 
-  .alone-yes { color: var(--success); font-weight: 500; }
+  .alone-yes { color: var(--success-text); font-weight: 500; }
   .alone-no { color: var(--text-muted); }
 
   .review-search {
@@ -309,7 +313,7 @@
 <body>
 
 <div class="header">
-  <h1>Room<span>Assigner</span></h1>
+  <h1><span>Nueva</span>RoomAssigner</h1>
   <div class="header-actions" id="headerActions" style="display:none">
     <button class="btn" onclick="autoAssign()">&#8635; Re-Assign</button>
     <button class="btn" onclick="clearRooms()">Clear All</button>
@@ -679,7 +683,7 @@ function updateStats() {
   const s3 = rooms.filter(r=>r.students.length>=3).length;
   document.getElementById('stats').innerHTML =
     `<span>Assigned: <strong>${a}/${students.length}</strong></span>`+
-    `<span>Conflicts: <strong style="color:${c?'var(--danger)':'var(--success)'}">${c}</strong></span>`+
+    `<span>Conflicts: <strong style="color:${c?'var(--danger)':'var(--success-text)'}">${c}</strong></span>`+
     `<span>Singles: <strong>${s1}</strong></span>`+
     `<span>Triples: <strong>${s3}</strong></span>`;
 }
