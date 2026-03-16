@@ -531,6 +531,30 @@ function autoAssign() {
   const byG = {};
   students.forEach(s => { if (!byG[s.gender]) byG[s.gender]=[]; byG[s.gender].push(s); });
 
+  // Pass 0: Place mutual pairs first (both students selected each other)
+  for (const gender of Object.keys(byG)) {
+    const pool = byG[gender];
+    for (const st of pool) {
+      if (assigned.has(st.id)) continue;
+      for (const pid of st.comfortableIds) {
+        if (assigned.has(pid)) continue;
+        const ps = sMap[pid];
+        if (!ps || ps.gender !== st.gender) continue;
+        // Check if the other student also listed this student
+        if (!ps.comfortableIds.includes(st.id)) continue;
+        // Mutual match found — place them together
+        const er = rooms.find(r => r.students.length === 0);
+        if (er) {
+          er.students.push(st, ps);
+          assigned.add(st.id);
+          assigned.add(ps.id);
+          break;
+        }
+      }
+    }
+  }
+
+  // Pass 1+: Place remaining students
   for (const gender of Object.keys(byG)) {
     const pool = [...byG[gender]].sort((a,b) =>
       (b.notComfortableIds.length*10+b.comfortableIds.length) -
