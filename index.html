@@ -131,7 +131,7 @@
 
   .rooms-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(5, 1fr);
     gap: 16px; margin-bottom: 24px;
   }
 
@@ -140,6 +140,12 @@
     border-radius: var(--radius); overflow: hidden; transition: border-color 0.2s;
   }
   .room-card:hover { border-color: var(--border-hover); }
+  .room-card.no-mutual .room-header { background: var(--danger-dim); }
+  .room-card.no-mutual .room-header h3::after {
+    content: ' — no mutual match';
+    text-transform: none; letter-spacing: 0;
+    font-weight: 500; color: var(--danger); font-size: 0.72rem;
+  }
 
   .room-header {
     padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
@@ -205,6 +211,7 @@
   .unassigned-panel {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius); margin-bottom: 24px;
+    position: sticky; top: 0; z-index: 100;
   }
   .unassigned-header {
     padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
@@ -301,10 +308,23 @@
   }
   .review-search::placeholder { color: var(--text-muted); }
 
+  .edit-btn {
+    background: none; border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-muted); cursor: pointer; font-size: 0.68rem; padding: 2px 6px;
+    font-family: 'DM Sans', sans-serif; transition: all 0.15s;
+  }
+  .edit-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .edit-input {
+    padding: 4px 8px; border: 1px solid var(--accent); border-radius: 4px;
+    font-family: 'DM Sans', sans-serif; font-size: 0.82rem; color: var(--text);
+    background: var(--bg); width: 100%;
+  }
+  .edit-input:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-dim); }
+
   @media (max-width: 600px) {
     .header { padding: 20px; }
     .workspace { padding: 16px; }
-    .rooms-grid { grid-template-columns: 1fr; }
+    .rooms-grid { grid-template-columns: repeat(2, 1fr); }
     .review-panel { padding: 16px; }
     .review-table-wrap { overflow-x: auto; }
   }
@@ -315,7 +335,7 @@
 <div class="header">
   <h1><span>Nueva</span>RoomAssigner</h1>
   <div class="header-actions" id="headerActions" style="display:none">
-    <button class="btn" onclick="autoAssign()">&#8635; Re-Assign</button>
+    <button class="btn" onclick="backToReview()">&#8592; Back to Review</button>
     <button class="btn" onclick="clearRooms()">Clear All</button>
     <button class="btn btn-primary" onclick="exportCSV()">Export CSV</button>
   </div>
@@ -355,6 +375,7 @@
           <th>Comfortable With</th>
           <th>Not Comfortable With</th>
           <th>Alone</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="reviewBody"></tbody>
@@ -371,7 +392,7 @@
       style="width:56px;padding:6px 8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface-raised);color:var(--text);font-size:0.85rem;text-align:center"
       onchange="updateRoomCount(this.value)">
   </div>
-  <div class="unassigned-panel" id="unassignedPanel" style="display:none">
+  <div class="unassigned-panel" id="unassignedPanel">
     <div class="unassigned-header">
       <h3>Unassigned Students</h3>
       <span class="room-count" id="unassignedCount">0</span>
@@ -449,22 +470,60 @@ function parseCSV(text) {
 
 function normGender(r) {
   if (!r) return 'unknown';
-  const g = r.trim().toLowerCase();
-  if (g.startsWith('f') || g.includes('female')) return 'female';
-  if (g.startsWith('m') || g.includes('male')) return 'male';
-  return 'nonbinary';
+  const g = r.trim().toLowerCase().replace(/[^a-z/ ]/g, '');
+  // Female indicators
+  if (g.startsWith('f') || g.includes('female') || g.includes('woman') || g.includes('girl')
+      || g.includes('she/') || g.includes('/her')) return 'female';
+  // Male indicators
+  if (g.startsWith('m') || g.includes('male') || g.includes('man') || g.includes('boy') || g.includes('guy')
+      || g.includes('he/') || g.includes('/him')) return 'male';
+  // Non-binary indicators
+  if (g.includes('non') || g.includes('nb') || g.includes('enby') || g.includes('they')
+      || g.includes('genderqueer') || g.includes('fluid') || g.includes('queer')) return 'nonbinary';
+  return 'unknown';
 }
 
 function parseNames(raw) {
   if (!raw) return [];
-  return raw
-    .replace(/\([^)]*\)/g, '')        // strip parentheticals: "Katie Chen(1st choice)" → "Katie Chen"
-    .split(/[,;\n\r]+|\.\s+|\s+and\s+|\s*&\s*/)  // split on comma, semicolon, newline, period+space, "and", &
-    .map(n => n.replace(/^[.\s]+|[.\s]+$/g, ''))   // strip leading/trailing periods & spaces
+  let s = raw;
+  // Remove wrapper labels/phrases (keep content inside parens)
+  s = s.replace(/first\s*priority\s*[-:>]*/gi, '');
+  s = s.replace(/in\s*this\s*order/gi, '');
+  s = s.replace(/in\s*order\s*(of\s*preference)?/gi, '');
+  s = s.replace(/order\s*of\s*preference/gi, '');
+  s = s.replace(/\b(preference|preferred|priority|preferably|ideally|ranked|ranking|if\s*possible|please|most\s*to\s*least|least\s*to\s*most)\b/gi, '');
+  // Strip parentheses but keep their content
+  s = s.replace(/[()]/g, ' ');
+  // Remove numbering like "1." "2." "1)" "#1" etc.
+  s = s.replace(/(\d+[.):\-]|#\d+)/g, ' ');
+  // Remove ordinals like "1st" "2nd" "3rd" "4th" and labels like "choice" "priority" "pick"
+  s = s.replace(/\b\d+(st|nd|rd|th)\b\s*(choice|priority|pick)?/gi, '');
+  // Remove arrow symbols
+  s = s.replace(/[-=]>|→/g, ' ');
+  // Now split on comma, semicolon, newline, period+space, " and ", &
+  let parts = s.split(/[,;\n\r]+|\.\s+|\s+and\s+|\s*&\s*/);
+  // Further split parts that contain multiple capitalized names (e.g. "Vivian M Julia C")
+  let names = [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    // Insert a split marker when a short word (1-2 chars, likely a last initial)
+    // is followed by a capitalized word with 3+ letters (likely a new first name)
+    const marked = trimmed.replace(/(\b[A-Z][a-z]?\.?)\s+(?=[A-Z][a-z]{2,})/g, '$1|||');
+    const nameMatches = marked.split('|||').map(n => n.trim()).filter(Boolean);
+    if (nameMatches && nameMatches.length > 0) {
+      names.push(...nameMatches);
+    } else {
+      // Fallback: just use the trimmed text
+      names.push(trimmed);
+    }
+  }
+  return names
+    .map(n => n.replace(/^[.\s]+|[.\s]+$/g, '').trim())
     .filter(n => {
       if (!n) return false;
       const c = n.toLowerCase().replace(/[^a-z\s]/g, '').trim();
-      return c && !/^(nobody|none|no\s*one|no\-?one|na|n\s*a|n\/a|nil|no|idk|anyone|no\s*pref(erence)?|does\s*n.?t\s*matter|don.?t\s*(care|know|mind)|i\s*don.?t\s*(care|know|mind)|anyone\s*is\s*fine|i\s*have\s*no\s*preference|all\s*good|i.?m\s*(fine|good|ok|okay)\s*with\s*(anyone|everybody|everyone))$/.test(c);
+      return c && !/^(nobody|none|no\s*one|no\-?one|na|n\s*a|n\/a|nil|no|idk|anyone|no\s*pref(erence)?|does\s*n.?t\s*matter|don.?t\s*(care|know|mind)|i\s*don.?t\s*(care|know|mind)|anyone\s*is\s*fine|i\s*have\s*no\s*preference|all\s*good|i.?m\s*(fine|good|ok|okay)\s*with\s*(anyone|everybody|everyone)|in\s*order|of\s*preference|order\s*of\s*preference|in\s*order\s*of\s*preference|preference|preferred|priority|ranked|ranking|please|if\s*possible|ideally|preferably|most\s*to\s*least|least\s*to\s*most|in|order|of)$/.test(c);
     });
 }
 
@@ -477,17 +536,123 @@ function fuzzyMatch(partial, pool) {
   let best = null, bestS = 0;
   for (const s of pool) {
     const sc = simScore(p, norm(s.name));
-    if (sc > bestS && sc > 0.35) { bestS = sc; best = s; }
+    if (sc > bestS && sc > 0.7) { bestS = sc; best = s; }
   }
   return best;
 }
 
+// Nickname groups — names in the same group are treated as equivalent
+const nicknameGroups = [
+  ['samuel','sam','sammy','sammi'],
+  ['william','will','willy','billy','bill','liam'],
+  ['james','jamie','jim','jimmy'],
+  ['robert','rob','robby','robbie','bob','bobby'],
+  ['richard','rick','ricky','rich','dick'],
+  ['joseph','joe','joey'],
+  ['thomas','tom','tommy'],
+  ['charles','charlie','chuck'],
+  ['christopher','chris'],
+  ['daniel','dan','danny'],
+  ['matthew','matt','matty'],
+  ['anthony','tony'],
+  ['andrew','andy','drew'],
+  ['benjamin','ben','benny','benji'],
+  ['nicholas','nick','nicky','nico'],
+  ['alexander','alex','xander'],
+  ['jonathan','jon','jonny'],
+  ['nathaniel','nathan','nate'],
+  ['zachary','zach','zack'],
+  ['timothy','tim','timmy'],
+  ['steven','steve','stephen'],
+  ['edward','ed','eddie','ted','teddy'],
+  ['michael','mike','mikey'],
+  ['patrick','pat','paddy'],
+  ['katherine','kate','katy','katie','kathy','kat'],
+  ['elizabeth','liz','lizzy','beth','betsy','eliza'],
+  ['jennifer','jen','jenny','jenn'],
+  ['margaret','maggie','meg','peggy','marge'],
+  ['patricia','pat','patty','trish','tricia'],
+  ['alexandra','alex','lexi','alexa'],
+  ['victoria','vicky','vicki','tori'],
+  ['rebecca','becca','becky'],
+  ['stephanie','steph','stephie'],
+  ['samantha','sam','sammy','sammi'],
+  ['catherine','cat','cathy','cate','kate'],
+  ['isabella','bella','izzy','izzie'],
+  ['abigail','abby','abbie','gail'],
+  ['madeline','maddy','maddie'],
+  ['gabriella','gabby','gabi','ella'],
+  ['olivia','liv','livvy'],
+  ['sophia','sophie'],
+  ['natalie','nat','nattie'],
+  ['valerie','val'],
+  ['jacqueline','jackie','jacqui'],
+  ['theodore','theo','teddy'],
+  ['sebastian','seb'],
+  ['maximilian','max'],
+  ['dominic','dom'],
+  ['frederick','fred','freddy','freddie'],
+  ['lawrence','larry','lars'],
+  ['raymond','ray'],
+  ['leonard','leo','lenny'],
+  ['braeden','braden','brayden','braiden'],
+  ['xochitl','xochi'],
+  ['cameron','cam'],
+  ['harrison','harry'],
+  ['allison','alison','ali','ally'],
+  ['kaitlyn','katelyn','caitlin','caitlyn','kate','katie'],
+  ['madeleine','madeline','madelyn','maddy','maddie'],
+  ['emilia','emily','emma','emmy'],
+  ['vivian','vivien','viv'],
+  ['juliana','julia','julie'],
+  ['annabelle','anna','annie','belle'],
+];
+
+// Build lookup: nickname → set of all aliases in its group
+const nicknameMap = {};
+for (const group of nicknameGroups) {
+  for (const name of group) {
+    if (!nicknameMap[name]) nicknameMap[name] = new Set();
+    for (const alias of group) nicknameMap[name].add(alias);
+  }
+}
+
+function areNicknames(first1, first2) {
+  const a = first1.toLowerCase(), b = first2.toLowerCase();
+  if (a === b) return true;
+  return nicknameMap[a] && nicknameMap[a].has(b);
+}
+
 function simScore(a, b) {
-  if (b.includes(a) || a.includes(b)) return 0.9;
   const ap = a.split(' ').filter(Boolean), bp = b.split(' ').filter(Boolean);
-  if (ap[0] === bp[0]) {
-    if (ap.length >= 2 && bp.length >= 2 && ap[1][0] === bp[1][0]) return 0.85;
-    return 0.8;
+
+  // Exact first name match is highest priority
+  if (ap[0] && bp[0] && ap[0] === bp[0]) {
+    if (ap.length >= 2 && bp.length >= 2 && ap[1][0] === bp[1][0]) return 0.96;
+    return 0.93;
+  }
+
+  // Full string exact/substring (only when first names also match or input is a single word)
+  if (b.includes(a) || a.includes(b)) {
+    // Check if first names match — "ella" in "ella yoon" should beat "ella" in "isabella zeng"
+    if (ap[0] && bp[0] && ap[0] === bp[0]) return 0.95;
+    // Input is just a first name and it matches the start of the other name
+    if (ap.length === 1 && bp[0] && bp[0] === ap[0]) return 0.95;
+    // Substring but first names don't match (e.g. "ella" inside "isabella") — lower score
+    if (ap[0] && bp[0] && ap[0] !== bp[0]) return 0.78;
+    return 0.9;
+  }
+
+  // Nickname match (e.g. "sammy" → "samuel")
+  if (ap[0] && bp[0] && areNicknames(ap[0], bp[0])) {
+    if (ap.length >= 2 && bp.length >= 2 && ap[1][0] === bp[1][0]) return 0.92;
+    if (ap.length === 1 || bp.length === 1) return 0.88;
+    return 0.85;
+  }
+  // First name is a substring of the other's first name (e.g. "Xochi" → "Xochitl")
+  if (ap[0] && bp[0] && (bp[0].includes(ap[0]) || ap[0].includes(bp[0]))) {
+    if (ap.length >= 2 && bp.length >= 2 && ap[1][0] === bp[1][0]) return 0.88;
+    return 0.85;
   }
   if (ap.length === 2 && ap[1].length === 1 && bp.length >= 2 &&
       bp[0].startsWith(ap[0].substring(0,3)) && bp[bp.length-1][0] === ap[1]) return 0.75;
@@ -531,66 +696,109 @@ function autoAssign() {
   const byG = {};
   students.forEach(s => { if (!byG[s.gender]) byG[s.gender]=[]; byG[s.gender].push(s); });
 
-  // Pass 0: Place mutual pairs first (both students selected each other)
-  for (const gender of Object.keys(byG)) {
-    const pool = byG[gender];
-    for (const st of pool) {
-      if (assigned.has(st.id)) continue;
-      for (const pid of st.comfortableIds) {
-        if (assigned.has(pid)) continue;
-        const ps = sMap[pid];
-        if (!ps || ps.gender !== st.gender) continue;
-        // Check if the other student also listed this student
-        if (!ps.comfortableIds.includes(st.id)) continue;
-        // Mutual match found — place them together
-        const er = rooms.find(r => r.students.length === 0);
-        if (er) {
-          er.students.push(st, ps);
-          assigned.add(st.id);
-          assigned.add(ps.id);
-          break;
-        }
-      }
+  // Helper: how many same-gender comfortable options a student has
+  function comfCount(s) {
+    return s.comfortableIds.filter(id => sMap[id] && sMap[id].gender === s.gender).length;
+  }
+
+  // Pass 0: Place mutual pairs — most constrained students first, then by list rank
+  const mutualPairs = [];
+  const seen = new Set();
+  for (const st of students) {
+    for (let i = 0; i < st.comfortableIds.length; i++) {
+      const pid = st.comfortableIds[i];
+      const ps = sMap[pid];
+      if (!ps || ps.gender !== st.gender) continue;
+      const j = ps.comfortableIds.indexOf(st.id);
+      if (j === -1) continue;
+      if (pairConflict(st, ps)) continue; // never pair students with not-comfortable conflicts
+      const key = Math.min(st.id, pid) + '-' + Math.max(st.id, pid);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      // Fewest options = highest priority; break ties by list position
+      const minOpts = Math.min(comfCount(st), comfCount(ps));
+      mutualPairs.push({ a: st, b: ps, minOpts, rank: i + j });
+    }
+  }
+  mutualPairs.sort((x, y) => x.minOpts - y.minOpts || x.rank - y.rank);
+
+  for (const pair of mutualPairs) {
+    if (assigned.has(pair.a.id) || assigned.has(pair.b.id)) continue;
+    const er = rooms.find(r => r.students.length === 0);
+    if (er) {
+      er.students.push(pair.a, pair.b);
+      assigned.add(pair.a.id);
+      assigned.add(pair.b.id);
     }
   }
 
-  // Pass 1+: Place remaining students
-  for (const gender of Object.keys(byG)) {
-    const pool = [...byG[gender]].sort((a,b) =>
-      (b.notComfortableIds.length*10+b.comfortableIds.length) -
-      (a.notComfortableIds.length*10+a.comfortableIds.length)
-    );
-
-    for (const st of pool) {
-      if (assigned.has(st.id)) continue;
-      let placed = false;
-
-      // Try room with existing preferred roommate (room must have exactly 1)
-      for (const pid of st.comfortableIds) {
-        if (!assigned.has(pid)) continue;
-        const tr = rooms.find(r => r.students.some(s=>s.id===pid) && r.students.length===1 && !hasConflict(st,r) && sameG(st,r));
-        if (tr) { tr.students.push(st); assigned.add(st.id); placed=true; break; }
-      }
-      if (placed) continue;
-
-      // Pair with unassigned preferred roommate in an empty room
-      for (const pid of st.comfortableIds) {
-        if (assigned.has(pid)) continue;
-        const ps = sMap[pid];
-        if (!ps || ps.gender !== st.gender) continue;
-        const er = rooms.find(r => r.students.length===0);
-        if (er) { er.students.push(st, ps); assigned.add(st.id); assigned.add(ps.id); placed=true; break; }
-      }
-      if (placed) continue;
-
-      // Fill a single-occupancy room to make a pair
-      const sr = rooms.find(r => r.students.length===1 && !hasConflict(st,r) && sameG(st,r));
-      if (sr) { sr.students.push(st); assigned.add(st.id); continue; }
-
-      // Start a new empty room
-      const em = rooms.find(r => r.students.length===0);
-      if (em) { em.students.push(st); assigned.add(st.id); continue; }
+  // Pass 1: One-directional pairs — most constrained student first
+  const oneDirPairs = [];
+  const seenOne = new Set();
+  for (const st of students) {
+    for (let i = 0; i < st.comfortableIds.length; i++) {
+      const pid = st.comfortableIds[i];
+      const ps = sMap[pid];
+      if (!ps || ps.gender !== st.gender) continue;
+      const key = Math.min(st.id, pid) + '-' + Math.max(st.id, pid);
+      if (seen.has(key) || seenOne.has(key)) continue;
+      seenOne.add(key);
+      if (ps.comfortableIds.includes(st.id)) continue; // mutual, handled above
+      if (pairConflict(st, ps)) continue; // never pair students with not-comfortable conflicts
+      const minOpts = Math.min(comfCount(st), comfCount(ps));
+      oneDirPairs.push({ a: st, b: ps, minOpts, rank: i });
     }
+  }
+  oneDirPairs.sort((x, y) => x.minOpts - y.minOpts || x.rank - y.rank);
+
+  for (const pair of oneDirPairs) {
+    if (assigned.has(pair.a.id) || assigned.has(pair.b.id)) continue;
+    const er = rooms.find(r => r.students.length === 0);
+    if (er) {
+      er.students.push(pair.a, pair.b);
+      assigned.add(pair.a.id);
+      assigned.add(pair.b.id);
+    }
+  }
+
+  // Pass 2: Place remaining students — fewest options first, prefer comfort connections
+  const remaining = students.filter(s => !assigned.has(s.id))
+    .sort((a, b) => comfCount(a) - comfCount(b));
+
+  for (const st of remaining) {
+    if (assigned.has(st.id)) continue;
+    let placed = false;
+
+    // Try room with existing preferred roommate (max 2 per room)
+    for (const pid of st.comfortableIds) {
+      if (!assigned.has(pid)) continue;
+      const tr = rooms.find(r => r.students.some(s=>s.id===pid) && r.students.length===1 && !hasConflict(st,r) && sameG(st,r));
+      if (tr) { tr.students.push(st); assigned.add(st.id); placed=true; break; }
+    }
+    if (placed) continue;
+
+    // Try room where someone listed this student as comfortable (max 2 per room)
+    const comfRoom = rooms.find(r => r.students.length===1 && !hasConflict(st,r) && sameG(st,r) &&
+      r.students.some(e => e.comfortableIds.includes(st.id)));
+    if (comfRoom) { comfRoom.students.push(st); assigned.add(st.id); continue; }
+
+    // Pair with unassigned preferred roommate in an empty room
+    for (const pid of st.comfortableIds) {
+      if (assigned.has(pid)) continue;
+      const ps = sMap[pid];
+      if (!ps || ps.gender !== st.gender) continue;
+      if (pairConflict(st, ps)) continue; // never pair students with not-comfortable conflicts
+      const er = rooms.find(r => r.students.length===0);
+      if (er) { er.students.push(st, ps); assigned.add(st.id); assigned.add(ps.id); placed=true; break; }
+    }
+    if (placed) continue;
+
+    // Last resort: pair students with no preferences with each other
+    const sr = rooms.find(r => r.students.length===1 && !hasConflict(st,r) && sameG(st,r));
+    if (sr) { sr.students.push(st); assigned.add(st.id); continue; }
+
+    const em = rooms.find(r => r.students.length===0);
+    if (em) { em.students.push(st); assigned.add(st.id); continue; }
   }
   renderWorkspace();
 }
@@ -599,6 +807,9 @@ function hasConflict(st, room) {
   return room.students.some(e =>
     st.notComfortableIds.includes(e.id) || e.notComfortableIds.includes(st.id)
   );
+}
+function pairConflict(a, b) {
+  return a.notComfortableIds.includes(b.id) || b.notComfortableIds.includes(a.id);
 }
 function sameG(st, room) {
   return room.students.length === 0 || room.students.every(s => s.gender === st.gender);
@@ -616,11 +827,32 @@ function renderWorkspace() {
 
   unassigned.forEach(s => uList.appendChild(makeChip(s, null)));
   document.getElementById('unassignedCount').textContent = unassigned.length;
-  document.getElementById('unassignedPanel').style.display = unassigned.length ? 'block' : 'none';
+  document.getElementById('unassignedPanel').style.display = 'block';
+
+  // Sort rooms: female first, then male, then nonbinary/unknown, then empty
+  const genderOrder = { female: 0, male: 1, nonbinary: 2, unknown: 3 };
+  rooms.sort((a, b) => {
+    const ag = a.students.length ? genderOrder[a.students[0].gender] ?? 3 : 4;
+    const bg = b.students.length ? genderOrder[b.students[0].gender] ?? 3 : 4;
+    return ag - bg;
+  });
+  // Renumber rooms to match display order
+  rooms.forEach((room, i) => { room.id = i; room.name = `Room ${i + 1}`; });
 
   rooms.forEach(room => {
     const card = document.createElement('div');
     card.className = 'room-card';
+    // Check if any pair in this room has mutual comfort preferences
+    let hasMutual = false;
+    if (room.students.length >= 2) {
+      for (let i = 0; i < room.students.length && !hasMutual; i++) {
+        for (let j = i+1; j < room.students.length && !hasMutual; j++) {
+          const a = room.students[i], b = room.students[j];
+          if (a.comfortableIds.includes(b.id) && b.comfortableIds.includes(a.id)) hasMutual = true;
+        }
+      }
+      if (!hasMutual) card.classList.add('no-mutual');
+    }
     card.innerHTML = `<div class="room-header"><h3>${room.name}</h3><span class="room-count">${room.students.length}</span></div><div class="room-body" data-room="${room.id}"></div>`;
     const body = card.querySelector('.room-body');
     room.students.forEach(s => body.appendChild(makeChip(s, room)));
@@ -659,7 +891,7 @@ function makeChip(student, room) {
   chip.innerHTML = `<span class="gender-label gl-${student.gender}">${gLabel}</span><span class="chip-name">${student.name}</span>${conflict?'<span class="chip-warning" title="Conflict with: '+cNames.join(', ')+'">&#9888;</span>':''}`;
   chip.addEventListener('mouseenter', e => showTip(e, student));
   chip.addEventListener('mouseleave', () => document.getElementById('tooltip').style.display='none');
-  chip.addEventListener('mousemove', e => { const t=document.getElementById('tooltip'); t.style.left=(e.clientX+14)+'px'; t.style.top=(e.clientY+14)+'px'; });
+  chip.addEventListener('mousemove', e => { const t=document.getElementById('tooltip'); t.style.left=(e.clientX+14)+'px'; const th=t.offsetHeight; if(e.clientY+14+th>window.innerHeight) { t.style.top=(e.clientY-th-8)+'px'; } else { t.style.top=(e.clientY+14)+'px'; } });
   return chip;
 }
 
@@ -673,6 +905,10 @@ function showTip(e, s) {
   else h += `<br><span style="color:var(--text-muted)">Comfortable with: —</span>`;
   if (rawN) h += `<br><span style="color:var(--text-muted)">Not comfortable with:</span><br><span class="pref-no">${rawN}</span>`;
   else h += `<br><span style="color:var(--text-muted)">Not comfortable with: —</span>`;
+  // Find all students who listed this student as someone they're comfortable with
+  const selectedBy = students.filter(o => o.id !== s.id && o.comfortableIds.includes(s.id)).map(o => o.name);
+  if (selectedBy.length) h += `<br><span style="color:var(--text-muted)">Selected by:</span><br><span style="color:var(--accent)">${selectedBy.join(', ')}</span>`;
+  else h += `<br><span style="color:var(--text-muted)">Selected by: —</span>`;
   h += `<br><span style="color:var(--text-muted)">Room alone:</span> <span style="color:var(--text)">${rawA||'—'}</span>`;
   tt.innerHTML = h; tt.style.display = 'block';
   tt.style.left = (e.clientX+14)+'px'; tt.style.top = (e.clientY+14)+'px';
@@ -817,6 +1053,7 @@ function renderReview() {
   for (const s of students) {
     const tr = document.createElement('tr');
     tr.dataset.name = s.name.toLowerCase();
+    tr.dataset.studentId = s.id;
 
     // Name
     const tdName = document.createElement('td');
@@ -832,11 +1069,9 @@ function renderReview() {
     const tdComf = document.createElement('td');
     if (s.comfortable.length) {
       s.comfortable.forEach((rawName, idx) => {
-        const resolved = s.comfortableIds[idx] ? sMap[s.comfortableIds[idx]] : null;
-        // Check if this raw name resolved to someone
         const match = fuzzyMatch(rawName, students.filter(x=>x.id!==s.id));
         if (match) {
-          tdComf.innerHTML += `<span class="pref-tag matched" title="Raw: ${rawName}">${match.name}</span>`;
+          tdComf.innerHTML += `<span class="pref-tag matched">${match.name}</span>`;
         } else {
           unmatchedCount++;
           tdComf.innerHTML += `<span class="pref-tag unmatched" title="No match found">? ${rawName}</span>`;
@@ -853,7 +1088,7 @@ function renderReview() {
       s.notComfortable.forEach(rawName => {
         const match = fuzzyMatch(rawName, students.filter(x=>x.id!==s.id));
         if (match) {
-          tdNotComf.innerHTML += `<span class="pref-tag not-comf matched" title="Raw: ${rawName}">${match.name}</span>`;
+          tdNotComf.innerHTML += `<span class="pref-tag not-comf matched">${match.name}</span>`;
         } else {
           unmatchedCount++;
           tdNotComf.innerHTML += `<span class="pref-tag not-comf unmatched" title="No match found">? ${rawName}</span>`;
@@ -868,6 +1103,15 @@ function renderReview() {
     const tdAlone = document.createElement('td');
     tdAlone.innerHTML = s.okAlone ? '<span class="alone-yes">Yes</span>' : '<span class="alone-no">No</span>';
     tr.appendChild(tdAlone);
+
+    // Edit button
+    const tdEdit = document.createElement('td');
+    const editBtn = document.createElement('button');
+    editBtn.className = 'edit-btn';
+    editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', () => startEditRow(s, tr));
+    tdEdit.appendChild(editBtn);
+    tr.appendChild(tdEdit);
 
     body.appendChild(tr);
   }
@@ -886,6 +1130,82 @@ function renderReview() {
   document.getElementById('reviewSummary').innerHTML = html;
 }
 
+function startEditRow(student, tr) {
+  const comfVal = student.comfortable.join(', ');
+  const notComfVal = student.notComfortable.join(', ');
+  tr.innerHTML = '';
+
+  // Name input
+  const tdName = document.createElement('td');
+  tdName.innerHTML = `<input class="edit-input" value="${student.name}" data-field="name">`;
+  tr.appendChild(tdName);
+
+  // Gender select
+  const tdGender = document.createElement('td');
+  tdGender.innerHTML = `<select class="edit-input" data-field="gender" style="width:auto">
+    <option value="female"${student.gender==='female'?' selected':''}>Female</option>
+    <option value="male"${student.gender==='male'?' selected':''}>Male</option>
+    <option value="nonbinary"${student.gender==='nonbinary'?' selected':''}>Non-binary</option>
+  </select>`;
+  tr.appendChild(tdGender);
+
+  // Comfortable With input
+  const tdComf = document.createElement('td');
+  tdComf.innerHTML = `<input class="edit-input" value="${comfVal}" data-field="comfortable" placeholder="Names separated by commas">`;
+  tr.appendChild(tdComf);
+
+  // Not Comfortable With input
+  const tdNotComf = document.createElement('td');
+  tdNotComf.innerHTML = `<input class="edit-input" value="${notComfVal}" data-field="notComfortable" placeholder="Names separated by commas">`;
+  tr.appendChild(tdNotComf);
+
+  // Alone select
+  const tdAlone = document.createElement('td');
+  tdAlone.innerHTML = `<select class="edit-input" data-field="alone" style="width:auto">
+    <option value="yes"${student.okAlone?' selected':''}>Yes</option>
+    <option value="no"${!student.okAlone?' selected':''}>No</option>
+  </select>`;
+  tr.appendChild(tdAlone);
+
+  // Save / Cancel buttons
+  const tdActions = document.createElement('td');
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'edit-btn';
+  saveBtn.style.cssText = 'border-color:var(--success-text);color:var(--success-text)';
+  saveBtn.textContent = 'Save';
+  saveBtn.addEventListener('click', () => saveEditRow(student, tr));
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'edit-btn';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.marginLeft = '4px';
+  cancelBtn.addEventListener('click', () => renderReview());
+  tdActions.appendChild(saveBtn);
+  tdActions.appendChild(cancelBtn);
+  tr.appendChild(tdActions);
+
+  // Focus the name field
+  tr.querySelector('[data-field="name"]').focus();
+}
+
+function saveEditRow(student, tr) {
+  const get = field => tr.querySelector(`[data-field="${field}"]`).value;
+
+  student.name = get('name').trim();
+  student.gender = get('gender');
+  student.okAlone = get('alone') === 'yes';
+
+  const comfRaw = get('comfortable').trim();
+  student.comfortable = comfRaw ? parseNames(comfRaw) : [];
+  student.rawComfortable = comfRaw;
+
+  const notComfRaw = get('notComfortable').trim();
+  student.notComfortable = notComfRaw ? parseNames(notComfRaw) : [];
+  student.rawNotComfortable = notComfRaw;
+
+  resolvePrefs();
+  renderReview();
+}
+
 function filterReview(query) {
   const q = query.toLowerCase();
   document.querySelectorAll('#reviewBody tr').forEach(tr => {
@@ -899,11 +1219,19 @@ function backToSetup() {
 }
 
 function proceedToAssignment() {
+  resolvePrefs();
   document.getElementById('reviewPanel').style.display = 'none';
   document.getElementById('roomCountLive').value = numRooms;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('headerActions').style.display = 'flex';
   autoAssign();
+}
+
+function backToReview() {
+  document.getElementById('workspace').style.display = 'none';
+  document.getElementById('headerActions').style.display = 'none';
+  document.getElementById('reviewPanel').style.display = 'block';
+  renderReview();
 }
 </script>
 </body>
