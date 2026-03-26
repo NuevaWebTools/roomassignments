@@ -148,9 +148,10 @@
   }
 
   .room-header {
-    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; display: flex; align-items: center; gap: 8px;
     border-bottom: 1px solid var(--border); background: var(--surface-raised);
   }
+  .room-header h3 { flex: 1; }
   .room-header h3 {
     font-family: 'DM Sans', sans-serif; font-size: 0.8rem; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted);
@@ -161,6 +162,15 @@
   }
 
   .room-body { min-height: 60px; padding: 8px; }
+
+  .cap-badge {
+    font-size: 0.65rem; font-weight: 600; padding: 2px 7px; border-radius: 10px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .cap-single { background: #f3e8ff; color: #7c3aed; }
+  .cap-double { background: var(--accent-dim); color: var(--accent); }
+  .single-room { border-color: #c4b5fd; }
+  .single-room .room-header { background: #faf5ff; }
 
   .add-room-card {
     background: transparent; border: 2px dashed var(--border);
@@ -350,8 +360,10 @@
   </div>
   <div class="file-loaded" id="fileLoaded"></div>
   <div class="room-config">
-    <label for="roomCount">Rooms:</label>
-    <input type="number" id="roomCount" min="1" max="30" value="15">
+    <label for="doubleCount">Double Rooms:</label>
+    <input type="number" id="doubleCount" min="0" max="50" value="10">
+    <label for="singleCount">Single Rooms:</label>
+    <input type="number" id="singleCount" min="0" max="50" value="5">
     <button class="btn btn-primary" id="startBtn" disabled onclick="startAssignment()">Start</button>
   </div>
 </div>
@@ -387,10 +399,14 @@
   <div class="controls">
     <div class="stats" id="stats"></div>
     <div class="spacer"></div>
-    <label style="font-size:0.8rem;color:var(--text-muted)">Rooms:</label>
-    <input type="number" id="roomCountLive" min="1" max="30"
+    <label style="font-size:0.8rem;color:var(--text-muted)">Doubles:</label>
+    <input type="number" id="doubleCountLive" min="0" max="50"
       style="width:56px;padding:6px 8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface-raised);color:var(--text);font-size:0.85rem;text-align:center"
-      onchange="updateRoomCount(this.value)">
+      onchange="updateRoomCounts()">
+    <label style="font-size:0.8rem;color:var(--text-muted)">Singles:</label>
+    <input type="number" id="singleCountLive" min="0" max="50"
+      style="width:56px;padding:6px 8px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface-raised);color:var(--text);font-size:0.85rem;text-align:center"
+      onchange="updateRoomCounts()">
   </div>
   <div class="unassigned-panel" id="unassignedPanel">
     <div class="unassigned-header">
@@ -409,6 +425,8 @@
 let students = [];
 let rooms = [];
 let numRooms = 15;
+let numDoubles = 10;
+let numSingles = 5;
 
 // ---- CSV PARSING ----
 function parseCSV(text) {
@@ -688,7 +706,8 @@ function resolvePrefs() {
 // ---- AUTO ASSIGNMENT ----
 function autoAssign() {
   rooms = [];
-  for (let i = 0; i < numRooms; i++) rooms.push({id:i, name:`Room ${i+1}`, students:[]});
+  for (let i = 0; i < numDoubles; i++) rooms.push({id:i, name:`Room ${i+1}`, capacity:2, students:[]});
+  for (let i = 0; i < numSingles; i++) rooms.push({id:numDoubles+i, name:`Room ${numDoubles+i+1}`, capacity:1, students:[]});
   resolvePrefs();
 
   const assigned = new Set();
@@ -724,7 +743,7 @@ function autoAssign() {
 
   for (const pair of mutualPairs) {
     if (assigned.has(pair.a.id) || assigned.has(pair.b.id)) continue;
-    const er = rooms.find(r => r.students.length === 0);
+    const er = rooms.find(r => r.students.length === 0 && r.capacity >= 2);
     if (er) {
       er.students.push(pair.a, pair.b);
       assigned.add(pair.a.id);
@@ -753,7 +772,7 @@ function autoAssign() {
 
   for (const pair of oneDirPairs) {
     if (assigned.has(pair.a.id) || assigned.has(pair.b.id)) continue;
-    const er = rooms.find(r => r.students.length === 0);
+    const er = rooms.find(r => r.students.length === 0 && r.capacity >= 2);
     if (er) {
       er.students.push(pair.a, pair.b);
       assigned.add(pair.a.id);
@@ -762,43 +781,71 @@ function autoAssign() {
   }
 
   // Pass 2: Place remaining students — fewest options first, prefer comfort connections
+  // Students who are NOT okAlone get priority for double rooms
   const remaining = students.filter(s => !assigned.has(s.id))
-    .sort((a, b) => comfCount(a) - comfCount(b));
+    .sort((a, b) => {
+      // Not-okAlone students first, then by constraint count
+      if (a.okAlone !== b.okAlone) return a.okAlone ? 1 : -1;
+      return comfCount(a) - comfCount(b);
+    });
 
   for (const st of remaining) {
     if (assigned.has(st.id)) continue;
     let placed = false;
 
-    // Try room with existing preferred roommate (max 2 per room)
+    // Try room with existing preferred roommate (double rooms only, has space)
     for (const pid of st.comfortableIds) {
       if (!assigned.has(pid)) continue;
-      const tr = rooms.find(r => r.students.some(s=>s.id===pid) && r.students.length===1 && !hasConflict(st,r) && sameG(st,r));
+      const tr = rooms.find(r => r.students.some(s=>s.id===pid) && r.students.length < r.capacity && !hasConflict(st,r) && sameG(st,r));
       if (tr) { tr.students.push(st); assigned.add(st.id); placed=true; break; }
     }
     if (placed) continue;
 
-    // Try room where someone listed this student as comfortable (max 2 per room)
-    const comfRoom = rooms.find(r => r.students.length===1 && !hasConflict(st,r) && sameG(st,r) &&
+    // Try room where someone listed this student as comfortable (has space)
+    const comfRoom = rooms.find(r => r.students.length===1 && r.capacity>=2 && !hasConflict(st,r) && sameG(st,r) &&
       r.students.some(e => e.comfortableIds.includes(st.id)));
     if (comfRoom) { comfRoom.students.push(st); assigned.add(st.id); continue; }
 
-    // Pair with unassigned preferred roommate in an empty room
+    // Pair with unassigned preferred roommate in an empty double room
     for (const pid of st.comfortableIds) {
       if (assigned.has(pid)) continue;
       const ps = sMap[pid];
       if (!ps || ps.gender !== st.gender) continue;
-      if (pairConflict(st, ps)) continue; // never pair students with not-comfortable conflicts
-      const er = rooms.find(r => r.students.length===0);
+      if (pairConflict(st, ps)) continue;
+      const er = rooms.find(r => r.students.length===0 && r.capacity>=2);
       if (er) { er.students.push(st, ps); assigned.add(st.id); assigned.add(ps.id); placed=true; break; }
     }
     if (placed) continue;
 
-    // Last resort: pair students with no preferences with each other
-    const sr = rooms.find(r => r.students.length===1 && !hasConflict(st,r) && sameG(st,r));
+    // Last resort pairing: join another student in a double room
+    const sr = rooms.find(r => r.students.length===1 && r.capacity>=2 && !hasConflict(st,r) && sameG(st,r));
     if (sr) { sr.students.push(st); assigned.add(st.id); continue; }
 
-    const em = rooms.find(r => r.students.length===0);
-    if (em) { em.students.push(st); assigned.add(st.id); continue; }
+    // If student is okAlone or no double rooms left, place in a single room
+    if (st.okAlone) {
+      const single = rooms.find(r => r.students.length===0 && r.capacity===1);
+      if (single) { single.students.push(st); assigned.add(st.id); continue; }
+    }
+
+    // Fallback: any empty double room (alone in double)
+    const emDouble = rooms.find(r => r.students.length===0 && r.capacity>=2);
+    if (emDouble) { emDouble.students.push(st); assigned.add(st.id); continue; }
+
+    // Final fallback: only allow single rooms for okAlone students
+    if (st.okAlone) {
+      const em = rooms.find(r => r.students.length===0);
+      if (em) { em.students.push(st); assigned.add(st.id); continue; }
+    }
+  }
+
+  // Post-pass: Move okAlone students who ended up alone in double rooms to single rooms if available
+  for (const r of rooms) {
+    if (r.students.length === 1 && r.capacity >= 2 && r.students[0].okAlone) {
+      const single = rooms.find(sr => sr.students.length === 0 && sr.capacity === 1);
+      if (single) {
+        single.students.push(r.students.pop());
+      }
+    }
   }
   renderWorkspace();
 }
@@ -829,9 +876,13 @@ function renderWorkspace() {
   document.getElementById('unassignedCount').textContent = unassigned.length;
   document.getElementById('unassignedPanel').style.display = 'block';
 
-  // Sort rooms: female first, then male, then nonbinary/unknown, then empty
+  // Sort rooms: doubles before singles, then by gender, then empty
   const genderOrder = { female: 0, male: 1, nonbinary: 2, unknown: 3 };
   rooms.sort((a, b) => {
+    // Capacity group: doubles first
+    const aCap = a.capacity >= 2 ? 0 : 1;
+    const bCap = b.capacity >= 2 ? 0 : 1;
+    if (aCap !== bCap) return aCap - bCap;
     const ag = a.students.length ? genderOrder[a.students[0].gender] ?? 3 : 4;
     const bg = b.students.length ? genderOrder[b.students[0].gender] ?? 3 : 4;
     return ag - bg;
@@ -853,7 +904,9 @@ function renderWorkspace() {
       }
       if (!hasMutual) card.classList.add('no-mutual');
     }
-    card.innerHTML = `<div class="room-header"><h3>${room.name}</h3><span class="room-count">${room.students.length}</span></div><div class="room-body" data-room="${room.id}"></div>`;
+    if (room.capacity === 1) card.classList.add('single-room');
+    const capBadge = room.capacity === 1 ? '<span class="cap-badge cap-single">Single</span>' : '<span class="cap-badge cap-double">Double</span>';
+    card.innerHTML = `<div class="room-header"><h3>${room.name}</h3>${capBadge}<span class="room-count">${room.students.length}/${room.capacity}</span></div><div class="room-body" data-room="${room.id}"></div>`;
     const body = card.querySelector('.room-body');
     room.students.forEach(s => body.appendChild(makeChip(s, room)));
     grid.appendChild(card);
@@ -939,13 +992,15 @@ function syncDOM() {
 function updateStats() {
   const a = rooms.reduce((s,r)=>s+r.students.length,0);
   const c = countConflicts();
-  const s1 = rooms.filter(r=>r.students.length===1).length;
-  const s3 = rooms.filter(r=>r.students.length>=3).length;
+  const aloneInDouble = rooms.filter(r=>r.capacity>=2 && r.students.length===1).length;
+  const singlesUsed = rooms.filter(r=>r.capacity===1 && r.students.length===1).length;
+  const overCap = rooms.filter(r=>r.students.length > r.capacity).length;
   document.getElementById('stats').innerHTML =
     `<span>Assigned: <strong>${a}/${students.length}</strong></span>`+
     `<span>Conflicts: <strong style="color:${c?'var(--danger)':'var(--success-text)'}">${c}</strong></span>`+
-    `<span>Singles: <strong>${s1}</strong></span>`+
-    `<span>Triples: <strong>${s3}</strong></span>`;
+    `<span>Singles used: <strong>${singlesUsed}/${numSingles}</strong></span>`+
+    `<span>Alone in double: <strong style="color:${aloneInDouble?'var(--warning, orange)':'var(--success-text)'}">${aloneInDouble}</strong></span>`+
+    (overCap?`<span>Over capacity: <strong style="color:var(--danger)">${overCap}</strong></span>`:'');
 }
 
 function countConflicts() {
@@ -973,20 +1028,31 @@ function checkConflicts() {
 
 function clearRooms() { rooms.forEach(r=>r.students=[]); renderWorkspace(); }
 
-function updateRoomCount(val) {
-  const n = parseInt(val);
-  if (isNaN(n)||n<1) return;
-  while (rooms.length > n) rooms.pop();
-  while (rooms.length < n) rooms.push({id:rooms.length, name:`Room ${rooms.length+1}`, students:[]});
-  numRooms = n;
+function updateRoomCounts() {
+  const nd = parseInt(document.getElementById('doubleCountLive').value) || 0;
+  const ns = parseInt(document.getElementById('singleCountLive').value) || 0;
+  if (nd < 0 || ns < 0) return;
+
+  // Rebuild rooms array preserving existing students where possible
+  const oldStudents = [];
+  rooms.forEach(r => r.students.forEach(s => oldStudents.push(s)));
+
+  rooms = [];
+  for (let i = 0; i < nd; i++) rooms.push({id: i, name: `Room ${i+1}`, capacity: 2, students: []});
+  for (let i = 0; i < ns; i++) rooms.push({id: nd+i, name: `Room ${nd+i+1}`, capacity: 1, students: []});
+
+  numDoubles = nd;
+  numSingles = ns;
+  numRooms = nd + ns;
   renderWorkspace();
 }
 
 function addRoom() {
   const newId = rooms.length ? Math.max(...rooms.map(r => r.id)) + 1 : 0;
-  rooms.push({id: newId, name: `Room ${rooms.length + 1}`, students: []});
+  rooms.push({id: newId, name: `Room ${rooms.length + 1}`, capacity: 2, students: []});
+  numDoubles++;
   numRooms = rooms.length;
-  document.getElementById('roomCountLive').value = numRooms;
+  document.getElementById('doubleCountLive').value = numDoubles;
   renderWorkspace();
 }
 
@@ -1029,14 +1095,20 @@ function loadFile(file) {
       const fl = document.getElementById('fileLoaded');
       fl.style.display='block'; fl.textContent=`✓ ${students.length} students loaded`;
       document.getElementById('startBtn').disabled=false;
-      document.getElementById('roomCount').value = Math.ceil(students.length/2);
+      const okAloneCount = students.filter(s => s.okAlone).length;
+      const defaultSingles = okAloneCount;
+      const defaultDoubles = Math.ceil((students.length - defaultSingles) / 2);
+      document.getElementById('doubleCount').value = defaultDoubles;
+      document.getElementById('singleCount').value = defaultSingles;
     }
   };
   r.readAsText(file);
 }
 
 function startAssignment() {
-  numRooms = parseInt(document.getElementById('roomCount').value)||15;
+  numDoubles = parseInt(document.getElementById('doubleCount').value)||10;
+  numSingles = parseInt(document.getElementById('singleCount').value)||5;
+  numRooms = numDoubles + numSingles;
   resolvePrefs();
   document.getElementById('setupPanel').style.display = 'none';
   document.getElementById('reviewPanel').style.display = 'block';
@@ -1221,7 +1293,8 @@ function backToSetup() {
 function proceedToAssignment() {
   resolvePrefs();
   document.getElementById('reviewPanel').style.display = 'none';
-  document.getElementById('roomCountLive').value = numRooms;
+  document.getElementById('doubleCountLive').value = numDoubles;
+  document.getElementById('singleCountLive').value = numSingles;
   document.getElementById('workspace').style.display = 'block';
   document.getElementById('headerActions').style.display = 'flex';
   autoAssign();
